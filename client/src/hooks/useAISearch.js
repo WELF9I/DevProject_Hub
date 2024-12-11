@@ -5,8 +5,9 @@ import { useNavigate } from '@tanstack/react-router'
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000'
 
 export function useAISearch() {
-  const [searchResults, setSearchResults] = useState([])
+  const [searchResult, setSearchResult] = useState(null)
   const [error, setError] = useState(null)
+  const [isLoading, setIsLoading] = useState(false)
   const navigate = useNavigate()
 
   const search = async (query) => {
@@ -14,55 +15,64 @@ export function useAISearch() {
     if (!trimmedQuery) {
       return
     }
+    setIsLoading(true)
+    setError(null)
 
     try {
-      // Extract search criteria
+      // extract search criteria
       const aiResponse = await axios.post(
         `${API_URL}/api/projects/extract-search-criteria`,
         { prompt: trimmedQuery },
         { 
           headers: { 'Content-Type': 'application/json' },
-          timeout: 10000 
+          timeout: 30000 // 30 seconds timeout
         }
       )
-
       const searchCriteria = aiResponse.data
 
-      /**
-       * @description Search for projects that fit the search criteria
-       */
-      const projectsResponse = await axios.post(
+      // searching for the most relevant project that fits the search criteria
+      const projectResponse = await axios.post(
         `${API_URL}/api/projects/search`,
         searchCriteria,
         { 
           headers: { 'Content-Type': 'application/json' },
-          timeout: 10000 
+          timeout: 60000 // 1 minute timeout
         }
       )
 
-      if (!projectsResponse.data?.length) {
-        setSearchResults([])
-        return
-      }
+      console.log('Project response:', projectResponse.data)
 
-      setSearchResults(projectsResponse.data)
-      setError(null)
-      navigate({ to: '/' })
+      if (!projectResponse.data) {
+        setSearchResult(null)
+        setError('No results found')
+      } else {
+        setSearchResult(projectResponse.data)
+        navigate({ to: '/' })
+      }
     } catch (err) {
-      setSearchResults([])
+      console.error('Search error:', err)
+      if (err.code === 'ECONNABORTED') {
+        setError('The search is taking longer than expected. Please try a more specific search query or try again later.')
+      } else {
+        setError(err.response?.data?.message || 'an error occurred during the search.')
+      }
+      setSearchResult(null)
+    } finally {
+      setIsLoading(false)
     }
   }
 
   const clearSearch = () => {
-    setSearchResults([])
+    setSearchResult(null)
     setError(null)
   }
 
   return { 
     search, 
     clearSearch, 
-    searchResults, 
-    error 
+    searchResult, 
+    error,
+    isLoading
   }
 }
 
