@@ -8,14 +8,5 @@ export default defineConfig({
   // optimizing Vite for production
   build: {
     outDir: 'dist',
-  },
-  server: {
-    proxy: {
-      '/api': {
-        target: 'https://devproject-hub.onrender.com/',
-        changeOrigin: true,
-        secure: false,
-      },
-    },
-  },
+  }
 });
