@@ -2,6 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import pool from '../config/database';
 import { CustomError } from '../middleware/errorHandler';
 import axios from 'axios';
+import { performance } from 'perf_hooks';
 
 interface SearchCriteria {
     title: string[];
@@ -88,106 +89,115 @@ export const createProject = async (req: Request, res: Response) => {
 };
 
 /**
+ @description WEIGHTS: importance factors for different match types in the search algorithm
+ */
+const WEIGHTS = {
+    // Highest priority: Exact or close title matches
+    // example: If searching for "expense tracker", a project titled "Expense Tracker App" gets a high score
+    TITLE_MATCH: 10,
+
+    // High priority: Matching project tags
+    // example: If searching for a "react" project, projects tagged with "react" are favored
+    TAG_MATCH: 8,
+
+    // Medium priority: Matches in the project description
+    // example: If "budget" is in the search query, projects with "budget" in the description get a boost
+    DESCRIPTION_MATCH: 5,
+
+    // Minimum score: Ensures all projects have at least some relevance
+    // helps in cases where no strong matches are found but we still want to return something
+    FALLBACK_SCORE: 1
+};
+
+/**
  * @description Handles searching for projects based on title, description, and tags.
  * The system assigns different scores to the search criteria for better results.
  */
 export const searchProjects = async (req: Request, res: Response, next: NextFunction) => {
+    const startTime = performance.now();
     const { title: titleKeywords, description: descriptionKeywords, tags }: SearchCriteria = req.body;
-
     try {
-        const queryValues: any[] = []; // values passed into the sql query
-        let parameterIndex = 1; // used to track the position of parameters in the sql query
-        const filterConditions: string[] = []; // stores the WHERE conditions
-        let relevanceFactors: string[] = []; // tracks how relevance is calculated
-
-        // ** Tag Filtering and Scoring **
-        if (tags?.length > 0) {
-            const tagPlaceholders: string[] = [];
-            
-            for (let i = 0; i < tags.length; i++) {
-                const currentTag = tags[i];
-                queryValues.push(currentTag.toUpperCase());
-                queryValues.push(currentTag.toLowerCase());
-                tagPlaceholders.push(`$${parameterIndex++}`);
-                tagPlaceholders.push(`$${parameterIndex++}`);
-                relevanceFactors.push(
-                    `CASE WHEN $${parameterIndex - 2}= ANY(tags) OR $${parameterIndex - 1} =ANY(tags) THEN 5 ELSE 0 END`
-                );
-            }
-
-            const tagConditions = [];
-            for (let i = 0; i < tags.length; i++) {
-                const start = i * 2;
-                tagConditions.push(`(${tagPlaceholders[start]} = ANY(tags) OR ${tagPlaceholders[start + 1]} = ANY(tags))`);
-            }
-
-            filterConditions.push(`(${tagConditions.join(' AND ')})`);
-        }
-
-        // ** title Scoring **
+        const queryValues: any[] = [];
+        let parameterIndex = 1;
+        const filterConditions: string[] = [];
+        let relevanceFactors: string[] = [];
+        // title matching
         if (titleKeywords?.length > 0) {
-            const titleSearchConditions = [];
-            
-            for (let i = 0; i < titleKeywords.length; i++) {
-                const currentKeyword = titleKeywords[i];
-                queryValues.push(`%${currentKeyword.toLowerCase()}%`);
-                
-                const relevanceLogic = `CASE WHEN LOWER(title) LIKE $${parameterIndex++} THEN 3 ELSE 0 END`;
-                relevanceFactors.push(relevanceLogic);
-                titleSearchConditions.push(`LOWER(title) LIKE $${parameterIndex - 1}`);
-            }
-
-            filterConditions.push(`(${titleSearchConditions.join(' OR ')})`);
+            titleKeywords.forEach(keyword => {
+                queryValues.push(`%${keyword.toLowerCase()}%`);
+                filterConditions.push(`LOWER(title) LIKE $${parameterIndex}`);
+                relevanceFactors.push(`CASE WHEN LOWER(title) LIKE $${parameterIndex} THEN ${WEIGHTS.TITLE_MATCH} ELSE 0 END`);
+                parameterIndex++;
+            });
         }
 
-        // ** description Scoring **
+        // tag matching
+        if (tags?.length > 0) {
+            tags.forEach(tag => {
+                queryValues.push(tag.toLowerCase());
+                filterConditions.push(`$${parameterIndex} = ANY(LOWER(tags::text)::text[])`);
+                relevanceFactors.push(`CASE WHEN $${parameterIndex} = ANY(LOWER(tags::text)::text[]) THEN ${WEIGHTS.TAG_MATCH} ELSE 0 END`);
+                parameterIndex++;
+            });
+        }
+
+        // description matching
         if (descriptionKeywords?.length > 0) {
-            const descSearchConditions = [];
-            
-            for (let i = 0; i < descriptionKeywords.length; i++) {
-                const currentKeyword = descriptionKeywords[i];
-                queryValues.push(`%${currentKeyword.toLowerCase()}%`);
-                
-                const descRelevance = `CASE WHEN LOWER(description) LIKE $${parameterIndex++} THEN 1 ELSE 0 END`;
-                relevanceFactors.push(descRelevance);
-                descSearchConditions.push(`LOWER(description) LIKE $${parameterIndex - 1}`);
-            }
-
-            filterConditions.push(`(${descSearchConditions.join(' OR ')})`);
+            descriptionKeywords.forEach(keyword => {
+                queryValues.push(`%${keyword.toLowerCase()}%`);
+                filterConditions.push(`LOWER(description) LIKE $${parameterIndex}`);
+                relevanceFactors.push(`CASE WHEN LOWER(description) LIKE $${parameterIndex} THEN ${WEIGHTS.DESCRIPTION_MATCH} ELSE 0 END`);
+                parameterIndex++;
+            });
         }
 
-        // ** relevance Score calculation **
+        const whereClause = filterConditions.length > 0 ? `WHERE ${filterConditions.join(' OR ')}` : '';
         const relevanceCalculation = relevanceFactors.length > 0
-            ? relevanceFactors.join(' + ')
-            : '0';
+            ? `GREATEST(${relevanceFactors.join(' + ')}, ${WEIGHTS.FALLBACK_SCORE})`
+            : `${WEIGHTS.FALLBACK_SCORE}`;
 
-        // ** final WHERE clause **
-        const whereClause = filterConditions.length > 0
-            ? `WHERE ${filterConditions.join(' AND ')}`
-            : '';
-
-        // ** final sql query **
         const finalQuery = `
             WITH scored_projects AS (
                 SELECT *,
-                    ${relevanceCalculation} as relevance_score
+                    ${relevanceCalculation} as relevance_score,
+                    (stars + forks + watchers) as engagement_score
                 FROM projects
                 ${whereClause}
             )
             SELECT *
             FROM scored_projects
-            WHERE relevance_score > 0
             ORDER BY 
                 relevance_score DESC,
-                stars DESC,
+                engagement_score DESC,
                 created_at DESC
-            LIMIT 50;
+            LIMIT 1;
         `;
+
         console.log('SQL Query to Execute:', finalQuery);
         console.log('Query Values:', queryValues);
         const queryResult = await pool.query(finalQuery, queryValues);
-        console.log(`Number of Projects Found: ${queryResult.rows.length}`);
-        res.status(200).json(queryResult.rows);
+        console.log(`Number of rows returned: ${queryResult.rows.length}`);
+        if (queryResult.rows.length === 0) {
+            console.log('No results found with initial query. Trying fallback query.');
+            const fallbackQuery = `
+                SELECT * FROM projects
+                ORDER BY (stars + forks + watchers) DESC
+                LIMIT 1;
+            `;
+
+            const fallbackResult = await pool.query(fallbackQuery);
+            console.log(`Number of rows returned by fallback query: ${fallbackResult.rows.length}`);
+            
+            if (fallbackResult.rows.length > 0) {
+                res.status(200).json(fallbackResult.rows[0]);
+            } else {
+                res.status(404).json({ message: 'No projects found in the database.' });
+            }
+        } else {
+            res.status(200).json(queryResult.rows[0]);
+        }
+        const endTime = performance.now();
+        console.log(`Search operation took ${endTime - startTime} milliseconds.`);
     } catch (error) {
         next(new CustomError(
             error instanceof Error ? error.message : 'Error occurred while searching projects',
@@ -213,7 +223,7 @@ export const updateProjectsEngagement = async (req: Request, res: Response, next
 
             if (repoOwner && repoName) {
                 try {
-                    // Fetch the repo details from GitHub API
+                    // fetch the repo details from GitHub API
                     const response = await axios.get(`https://api.github.com/repos/${repoOwner}/${repoName}`, {
                         headers: {
                             'Authorization': `Bearer ${GITHUB_TOKEN}`,
