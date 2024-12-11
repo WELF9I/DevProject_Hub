@@ -15,6 +15,9 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.deleteProjectFromHistory = exports.deleteAllUserHistory = exports.getUserHistory = exports.addHistory = void 0;
 const database_1 = __importDefault(require("../config/database"));
 const errorHandler_1 = require("../middleware/errorHandler");
+/**
+ @description add a new project to a user's history, if the user's history has more than 9 projects, the oldest one will be deleted
+ */
 const addHistory = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     const { clerk_id, project_id } = req.params;
     try {
@@ -56,9 +59,9 @@ const addHistory = (req, res) => __awaiter(void 0, void 0, void 0, function* () 
         res.status(201).json(rows[0]);
     }
     catch (error) {
-        // Check if error is due to unique constraint violation
+        // check if error is due to unique constraint violation
         if (error.code === '23505') {
-            // If duplicate, update the existing record
+            // if the project has already been added to the user's history, update the visit_date to override the old one
             const updateResult = yield database_1.default.query(`
                 UPDATE history 
                 SET visit_date = CURRENT_TIMESTAMP 
@@ -68,11 +71,14 @@ const addHistory = (req, res) => __awaiter(void 0, void 0, void 0, function* () 
             res.status(200).json(updateResult.rows[0]);
         }
         else {
-            throw new errorHandler_1.AppError('Failed to update project history', 400);
+            throw new errorHandler_1.CustomError('Failed to update project history', 400);
         }
     }
 });
 exports.addHistory = addHistory;
+/**
+ @description get all history for a specific user
+ */
 const getUserHistory = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     const { clerk_id } = req.params;
     try {
@@ -87,10 +93,13 @@ const getUserHistory = (req, res) => __awaiter(void 0, void 0, void 0, function*
         res.json(rows);
     }
     catch (error) {
-        throw new errorHandler_1.AppError('Failed to retrieve history', 500);
+        throw new errorHandler_1.CustomError('Failed to retrieve history of the user', 500);
     }
 });
 exports.getUserHistory = getUserHistory;
+/**
+ @description delete all user's history
+ */
 const deleteAllUserHistory = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     const { clerk_id } = req.params;
     try {
@@ -99,24 +108,22 @@ const deleteAllUserHistory = (req, res) => __awaiter(void 0, void 0, void 0, fun
             WHERE clerk_id = $1
         `, [clerk_id]);
         res.status(200).json({
-            message: 'All history entries deleted successfully',
+            message: 'All history projects deleted successfully',
             deletedCount: rowCount
         });
     }
     catch (error) {
-        if (error instanceof errorHandler_1.AppError) {
+        if (error instanceof errorHandler_1.CustomError) {
             throw error;
         }
         else {
-            throw new errorHandler_1.AppError('Failed to delete all user history', 500);
+            throw new errorHandler_1.CustomError('Failed to delete all user history', 500);
         }
     }
 });
 exports.deleteAllUserHistory = deleteAllUserHistory;
 /**
- * Deletes a specific project from a user's history.
- * @param req Request object with clerk_id and project_id in params
- * @param res Response object
+ @description delete a specific project from a user's history
  */
 const deleteProjectFromHistory = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     const { clerk_id, project_id } = req.params;
@@ -126,17 +133,16 @@ const deleteProjectFromHistory = (req, res) => __awaiter(void 0, void 0, void 0,
             WHERE clerk_id = $1 AND project_id = $2
         `, [clerk_id, project_id]);
         if (rowCount === 0) {
-            throw new errorHandler_1.AppError('Project not found in user history', 404);
+            throw new errorHandler_1.CustomError('This project not found in user history', 404);
         }
-        res.status(200).json({ message: 'Project deleted from history successfully' });
+        res.status(200).json({ message: 'project deleted from history successfully' });
     }
     catch (error) {
-        // Error handling remains the same
-        if (error instanceof errorHandler_1.AppError) {
+        if (error instanceof errorHandler_1.CustomError) {
             throw error;
         }
         else {
-            throw new errorHandler_1.AppError('Failed to delete project from history', 500);
+            throw new errorHandler_1.CustomError('Failed to delete project from history', 500);
         }
     }
 });

@@ -15,11 +15,11 @@ const helmet_1 = __importDefault(require("helmet"));
 const timeout_1 = require("./middleware/timeout");
 dotenv_1.default.config();
 const app = (0, express_1.default)();
-// Security headers
+// security headers using helmet
 app.use((0, helmet_1.default)());
-// Request timeout - 30 seconds
-app.use((0, timeout_1.timeout)(30));
-// Rate limiting
+// setiing equest timeout to 30 seconds
+app.use((0, timeout_1.setRequestTimeout)(30));
+// rate limiting
 const rateLimit = require('express-rate-limit');
 app.use(rateLimit({
     windowMs: 15 * 60 * 1000,
@@ -35,12 +35,12 @@ app.use((0, cors_1.default)({
     credentials: true
 }));
 app.use(express_1.default.json());
-// Routes
+// all server routes
 app.use('/api/projects', projectRoutes_1.default);
 app.use('/api/bookmarks', bookmarkRoutes_1.default);
 app.use('/api/history', historyRoutes_1.default);
 app.use('/api/charts', chartRoutes_1.default);
-app.use(errorHandler_1.errorHandler);
+app.use(errorHandler_1.handleErrors);
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);

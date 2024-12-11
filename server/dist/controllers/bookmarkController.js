@@ -15,6 +15,9 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.checkProjectBookmark = exports.getUserBookmarks = exports.deleteBookmark = exports.createBookmark = void 0;
 const database_1 = __importDefault(require("../config/database"));
 const errorHandler_1 = require("../middleware/errorHandler");
+/**
+ @description Create a new bookmark for a project of a specific user
+ */
 const createBookmark = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     const { clerk_id, project_id } = req.body;
     try {
@@ -25,10 +28,13 @@ const createBookmark = (req, res) => __awaiter(void 0, void 0, void 0, function*
         res.status(201).json(rows[0] || { message: 'Bookmark already exists' });
     }
     catch (error) {
-        throw new errorHandler_1.AppError('Failed to create bookmark', 400);
+        throw new errorHandler_1.CustomError('Failed to create bookmark', 400);
     }
 });
 exports.createBookmark = createBookmark;
+/**
+ @description delete a bookmark for a project of a specific user
+ */
 const deleteBookmark = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     const { clerk_id, project_id } = req.body;
     try {
@@ -37,10 +43,13 @@ const deleteBookmark = (req, res) => __awaiter(void 0, void 0, void 0, function*
         res.status(204).send();
     }
     catch (error) {
-        throw new errorHandler_1.AppError('Failed to remove bookmark', 400);
+        throw new errorHandler_1.CustomError('Failed to remove bookmark', 400);
     }
 });
 exports.deleteBookmark = deleteBookmark;
+/**
+ @description get all bookmarks for a specific user
+ */
 const getUserBookmarks = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     const { clerk_id } = req.params;
     try {
@@ -53,10 +62,13 @@ const getUserBookmarks = (req, res) => __awaiter(void 0, void 0, void 0, functio
         res.json(rows);
     }
     catch (error) {
-        throw new errorHandler_1.AppError('Failed to retrieve bookmarks', 500);
+        throw new errorHandler_1.CustomError('Failed to retrieve bookmarks', 500);
     }
 });
 exports.getUserBookmarks = getUserBookmarks;
+/**
+ @description check if a project is bookmarked for thaa specific user
+ */
 const checkProjectBookmark = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     const { clerk_id, project_id } = req.query;
     try {
@@ -67,7 +79,7 @@ const checkProjectBookmark = (req, res) => __awaiter(void 0, void 0, void 0, fun
         res.json({ isBookmarked: rows[0].exists });
     }
     catch (error) {
-        throw new errorHandler_1.AppError('Failed to check bookmark status', 500);
+        throw new errorHandler_1.CustomError('Failed to check bookmark status', 500);
     }
 });
 exports.checkProjectBookmark = checkProjectBookmark;

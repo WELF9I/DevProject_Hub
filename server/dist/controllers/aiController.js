@@ -15,33 +15,29 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.extractSearchCriteria = void 0;
 const errorHandler_1 = require("../middleware/errorHandler");
 const axios_1 = __importDefault(require("axios"));
+/**
+ * @description Extracts search criteria from a user-provided prompt using the Gemini API.
+ * The extracted criteria include titles, descriptions and tags.
+ */
 const extractSearchCriteria = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k;
     const { prompt } = req.body;
-    if (!prompt) {
-        throw new errorHandler_1.AppError('Search prompt is required', 400);
-    }
-    if (!process.env.GEMINI_API_KEY) {
-        console.error('GEMINI_API_KEY is not set in environment variables');
-        throw new errorHandler_1.AppError('API configuration error', 500);
-    }
     try {
-        console.log('Sending request to Gemini API with prompt:', prompt);
+        // Sending request to Gemini API to extract search criteria
         const response = yield axios_1.default.post(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${process.env.GEMINI_API_KEY}`, {
             contents: [{
                     parts: [{
-                            text: `Extract search criteria from this prompt: "${prompt}"
-                        Return ONLY a JSON object with these fields:
-                        - title: array of potential title keywords
-                        - description: array of descriptive keywords
-                        - tags: array of technology tags
-                        Example format:
-                        {
-                            "title": ["portfolio website"],
-                            "description": ["simple"],
-                            "tags": ["html", "css"]
-                        }
-                        Return the JSON object directly without any markdown formatting or code blocks.`
+                            text: `Extract search criteria from this prompt: "${prompt}". 
+                               Return a JSON object with the following fields only:
+                               - title: an array of potential title keywords
+                               - description: an array of descriptive keywords
+                               - tags: an array of relevant technology tags
+                               Example format:
+                               {
+                                   "title": ["portfolio website"],
+                                   "description": ["simple"],
+                                   "tags": ["html", "css"]
+                               }`
                         }]
                 }],
             generationConfig: {
@@ -51,48 +47,50 @@ const extractSearchCriteria = (req, res) => __awaiter(void 0, void 0, void 0, fu
                 maxOutputTokens: 1024,
             }
         }, {
-            headers: {
-                'Content-Type': 'application/json'
-            }
+            headers: { 'Content-Type': 'application/json' }
         });
-        console.log('Received response from Gemini API:', JSON.stringify(response.data, null, 2));
-        if (!((_f = (_e = (_d = (_c = (_b = (_a = response.data) === null || _a === void 0 ? void 0 : _a.candidates) === null || _b === void 0 ? void 0 : _b[0]) === null || _c === void 0 ? void 0 : _c.content) === null || _d === void 0 ? void 0 : _d.parts) === null || _e === void 0 ? void 0 : _e[0]) === null || _f === void 0 ? void 0 : _f.text)) {
-            console.error('Invalid response structure from Gemini API:', response.data);
-            throw new errorHandler_1.AppError('Invalid AI response structure', 500);
+        console.log('Response received from Gemini API:', JSON.stringify(response.data, null, 2));
+        // Validate the response structure from Gemini API
+        const aiResponse = (_f = (_e = (_d = (_c = (_b = (_a = response.data) === null || _a === void 0 ? void 0 : _a.candidates) === null || _b === void 0 ? void 0 : _b[0]) === null || _c === void 0 ? void 0 : _c.content) === null || _d === void 0 ? void 0 : _d.parts) === null || _e === void 0 ? void 0 : _e[0]) === null || _f === void 0 ? void 0 : _f.text;
+        if (!aiResponse) {
+            throw new errorHandler_1.CustomError('Unexpected AI response structure.', 500);
         }
-        let aiResponseText = response.data.candidates[0].content.parts[0].text.trim();
-        console.log('Original AI response text:', aiResponseText);
-        // Remove markdown code blocks if present
-        aiResponseText = aiResponseText.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
-        console.log('Cleaned AI response text:', aiResponseText);
+        let cleanedResponseText = aiResponse.trim();
+        console.log('Initial AI response text:', cleanedResponseText);
+        // here we remove code block markers (example, ```json) if they exist because they cause issues
+        cleanedResponseText = cleanedResponseText.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
         try {
-            const searchCriteria = JSON.parse(aiResponseText);
+            // Here we parse the AI response text into a JSON object
+            const searchCriteria = JSON.parse(cleanedResponseText);
             // Validate the parsed object structure
             if (!Array.isArray(searchCriteria.title) ||
                 !Array.isArray(searchCriteria.description) ||
                 !Array.isArray(searchCriteria.tags)) {
-                throw new Error('Invalid search criteria structure');
+                throw new Error('Incorrecte search criteria structure !.');
             }
-            console.log('Successfully parsed search criteria:', searchCriteria);
+            console.log('Successfully extracted search criteria:', searchCriteria);
+            // Send the extracted criteria back to the client
             res.json(searchCriteria);
         }
         catch (parseError) {
-            console.error('Failed to parse AI response:', parseError);
-            console.error('Raw AI response:', aiResponseText);
-            throw new errorHandler_1.AppError('Failed to parse AI response', 500);
+            console.error('Error parsing AI response:', parseError);
+            console.error('Original AI response that failed to parse:', cleanedResponseText);
+            throw new errorHandler_1.CustomError('Could not parse AI response into a valid JSON object.', 500);
         }
     }
     catch (error) {
-        console.error('Error in extractSearchCriteria:', error);
+        console.error('An error occurred in the extractSearchCriteria function:', error);
         if (axios_1.default.isAxiosError(error)) {
             console.error('Axios error details:', {
-                response: (_g = error.response) === null || _g === void 0 ? void 0 : _g.data,
-                status: (_h = error.response) === null || _h === void 0 ? void 0 : _h.status,
-                headers: (_j = error.response) === null || _j === void 0 ? void 0 : _j.headers
+                responseData: (_g = error.response) === null || _g === void 0 ? void 0 : _g.data,
+                statusCode: (_h = error.response) === null || _h === void 0 ? void 0 : _h.status,
+                responseHeaders: (_j = error.response) === null || _j === void 0 ? void 0 : _j.headers
             });
-            throw new errorHandler_1.AppError(`Failed to communicate with AI service: ${error.message}`, ((_k = error.response) === null || _k === void 0 ? void 0 : _k.status) || 500);
+            throw new errorHandler_1.CustomError(`Failed to communicate with the Gemini API: ${error.message}`, ((_k = error.response) === null || _k === void 0 ? void 0 : _k.status) || 500);
         }
-        throw new errorHandler_1.AppError(error instanceof errorHandler_1.AppError ? error.message : 'Failed to process search criteria', error instanceof errorHandler_1.AppError ? error.statusCode : 500);
+        const errorMessage = error instanceof errorHandler_1.CustomError ? error.message : 'An unexpected error occurred while processing the search criteria.';
+        const statusCode = error instanceof errorHandler_1.CustomError ? error.statusCode : 500;
+        throw new errorHandler_1.CustomError(errorMessage, statusCode);
     }
 });
 exports.extractSearchCriteria = extractSearchCriteria;

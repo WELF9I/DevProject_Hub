@@ -14,6 +14,10 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.getPopularTagsByEngagement = void 0;
 const database_1 = __importDefault(require("../config/database"));
+/**
+ *
+ @description get popular tags by their engagement in projects with sum of stars, forks and watchers
+ */
 const getPopularTagsByEngagement = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
         const { rows } = yield database_1.default.query(`
@@ -32,8 +36,7 @@ const getPopularTagsByEngagement = (req, res) => __awaiter(void 0, void 0, void 
         res.json(rows);
     }
     catch (error) {
-        console.error('Error in getPopularTagsByEngagement:', error);
-        res.status(500).json({ message: 'Failed to retrieve tag engagement' });
+        res.status(500).json({ message: 'Failed to retrieve the tag engagement' });
     }
 });
 exports.getPopularTagsByEngagement = getPopularTagsByEngagement;

@@ -17,6 +17,9 @@ const database_1 = __importDefault(require("../config/database"));
 const errorHandler_1 = require("../middleware/errorHandler");
 const axios_1 = __importDefault(require("axios"));
 const GITHUB_TOKEN = process.env.GITHUB_TOKEN;
+/**
+ @description get all projects from the database
+ */
 const getAllProjects = (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
     try {
         const result = yield database_1.default.query(`
@@ -30,13 +33,16 @@ const getAllProjects = (req, res, next) => __awaiter(void 0, void 0, void 0, fun
     }
     catch (error) {
         if (!res.headersSent) {
-            next(new errorHandler_1.AppError(error.message === 'Database query timeout'
+            next(new errorHandler_1.CustomError(error.message === 'Database query timeout'
                 ? 'Database query timeout'
-                : 'Failed to retrieve projects', 500));
+                : 'Failed to get projects', 500));
         }
     }
 });
 exports.getAllProjects = getAllProjects;
+/**
+ @description get top 3 projects by engagement (sum of stars,forks,watchers)
+ */
 const getTopProjects = (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
     try {
         const result = yield database_1.default.query(`
@@ -50,11 +56,13 @@ const getTopProjects = (req, res, next) => __awaiter(void 0, void 0, void 0, fun
         }
     }
     catch (error) {
-        console.error('Error retrieving top projects:', error);
-        next(new errorHandler_1.AppError(error instanceof Error ? error.message : 'Failed to retrieve top projects', 500));
+        next(new errorHandler_1.CustomError(error instanceof Error ? error.message : 'Failed to get top projects', 500));
     }
 });
 exports.getTopProjects = getTopProjects;
+/**
+@description create a new project(s),and support insert multiple projects at the same time
+ */
 const createProject = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     const projects = Array.isArray(req.body) ? req.body : [req.body];
     try {
@@ -72,96 +80,110 @@ const createProject = (req, res) => __awaiter(void 0, void 0, void 0, function* 
         res.status(201).json(createdProjects);
     }
     catch (error) {
-        throw new errorHandler_1.AppError('Failed to create projects', 400);
+        throw new errorHandler_1.CustomError('Failed to create projects', 400);
     }
 });
 exports.createProject = createProject;
+/**
+ * @description Handles searching for projects based on title, description, and tags.
+ * The system assigns different scores to the search criteria for better results.
+ */
 const searchProjects = (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
     const { title: titleKeywords, description: descriptionKeywords, tags } = req.body;
     try {
-        const values = [];
-        let paramCounter = 1;
-        const conditions = [];
-        let scoreComponents = [];
-        // Tag scoring and filtering (highest priority - 5 points per tag)
+        const queryValues = []; // values passed into the sql query
+        let parameterIndex = 1; // used to track the position of parameters in the sql query
+        const filterConditions = []; // stores the WHERE conditions
+        let relevanceFactors = []; // tracks how relevance is calculated
+        // ** Tag Filtering and Scoring **
         if ((tags === null || tags === void 0 ? void 0 : tags.length) > 0) {
-            const tagParams = [];
-            tags.forEach(tag => {
-                values.push(tag.toUpperCase());
-                values.push(tag.toLowerCase());
-                tagParams.push(`$${paramCounter++}`);
-                tagParams.push(`$${paramCounter++}`);
-                scoreComponents.push(`CASE WHEN $${paramCounter - 2} = ANY(tags) OR $${paramCounter - 1} = ANY(tags) THEN 5 ELSE 0 END`);
-            });
-            // Ensure ALL provided tags are present
-            const tagConditions = tags.map((_, idx) => {
-                const pos = idx * 2;
-                return `(${tagParams[pos]} = ANY(tags) OR ${tagParams[pos + 1]} = ANY(tags))`;
-            });
-            conditions.push(`(${tagConditions.join(' AND ')})`);
+            const tagPlaceholders = [];
+            for (let i = 0; i < tags.length; i++) {
+                const currentTag = tags[i];
+                queryValues.push(currentTag.toUpperCase());
+                queryValues.push(currentTag.toLowerCase());
+                tagPlaceholders.push(`$${parameterIndex++}`);
+                tagPlaceholders.push(`$${parameterIndex++}`);
+                relevanceFactors.push(`CASE WHEN $${parameterIndex - 2}= ANY(tags) OR $${parameterIndex - 1} =ANY(tags) THEN 5 ELSE 0 END`);
+            }
+            const tagConditions = [];
+            for (let i = 0; i < tags.length; i++) {
+                const start = i * 2;
+                tagConditions.push(`(${tagPlaceholders[start]} = ANY(tags) OR ${tagPlaceholders[start + 1]} = ANY(tags))`);
+            }
+            filterConditions.push(`(${tagConditions.join(' AND ')})`);
         }
-        // Title scoring (medium priority - 3 points per match)
+        // ** title Scoring **
         if ((titleKeywords === null || titleKeywords === void 0 ? void 0 : titleKeywords.length) > 0) {
-            const titleScores = titleKeywords.map(keyword => {
-                values.push(`%${keyword.toLowerCase()}%`);
-                const score = `CASE WHEN LOWER(title) LIKE $${paramCounter++} THEN 3 ELSE 0 END`;
-                scoreComponents.push(score);
-                return `LOWER(title) LIKE $${paramCounter - 1}`;
-            });
-            conditions.push(`(${titleScores.join(' OR ')})`);
+            const titleSearchConditions = [];
+            for (let i = 0; i < titleKeywords.length; i++) {
+                const currentKeyword = titleKeywords[i];
+                queryValues.push(`%${currentKeyword.toLowerCase()}%`);
+                const relevanceLogic = `CASE WHEN LOWER(title) LIKE $${parameterIndex++} THEN 3 ELSE 0 END`;
+                relevanceFactors.push(relevanceLogic);
+                titleSearchConditions.push(`LOWER(title) LIKE $${parameterIndex - 1}`);
+            }
+            filterConditions.push(`(${titleSearchConditions.join(' OR ')})`);
         }
-        // Description scoring (lowest priority - 1 point per match)
+        // ** description Scoring **
         if ((descriptionKeywords === null || descriptionKeywords === void 0 ? void 0 : descriptionKeywords.length) > 0) {
-            const descScores = descriptionKeywords.map(keyword => {
-                values.push(`%${keyword.toLowerCase()}%`);
-                const score = `CASE WHEN LOWER(description) LIKE $${paramCounter++} THEN 1 ELSE 0 END`;
-                scoreComponents.push(score);
-                return `LOWER(description) LIKE $${paramCounter - 1}`;
-            });
-            conditions.push(`(${descScores.join(' OR ')})`);
+            const descSearchConditions = [];
+            for (let i = 0; i < descriptionKeywords.length; i++) {
+                const currentKeyword = descriptionKeywords[i];
+                queryValues.push(`%${currentKeyword.toLowerCase()}%`);
+                const descRelevance = `CASE WHEN LOWER(description) LIKE $${parameterIndex++} THEN 1 ELSE 0 END`;
+                relevanceFactors.push(descRelevance);
+                descSearchConditions.push(`LOWER(description) LIKE $${parameterIndex - 1}`);
+            }
+            filterConditions.push(`(${descSearchConditions.join(' OR ')})`);
         }
-        // Combine all scoring components
-        const relevancyScore = scoreComponents.length > 0
-            ? scoreComponents.join(' + ')
+        // ** relevance Score calculation **
+        const relevanceCalculation = relevanceFactors.length > 0
+            ? relevanceFactors.join(' + ')
             : '0';
-        // Build the final query with WHERE clause
-        const whereClause = conditions.length > 0
-            ? `WHERE ${conditions.join(' AND ')}`
+        // ** final WHERE clause **
+        const whereClause = filterConditions.length > 0
+            ? `WHERE ${filterConditions.join(' AND ')}`
             : '';
-        const query = `
+        // ** final sql query **
+        const finalQuery = `
             WITH scored_projects AS (
                 SELECT *,
-                    ${relevancyScore} as relevancy_score
+                    ${relevanceCalculation} as relevance_score
                 FROM projects
                 ${whereClause}
             )
             SELECT *
             FROM scored_projects
-            WHERE relevancy_score > 0
+            WHERE relevance_score > 0
             ORDER BY 
-                relevancy_score DESC,
+                relevance_score DESC,
                 stars DESC,
                 created_at DESC
             LIMIT 50;
         `;
-        console.log('Executing query:', query);
-        console.log('With values:', values);
-        const result = yield database_1.default.query(query, values);
-        console.log(`Found ${result.rows.length} matching projects`);
-        res.status(200).json(result.rows);
+        console.log('SQL Query to Execute:', finalQuery);
+        console.log('Query Values:', queryValues);
+        const queryResult = yield database_1.default.query(finalQuery, queryValues);
+        console.log(`Number of Projects Found: ${queryResult.rows.length}`);
+        res.status(200).json(queryResult.rows);
     }
     catch (error) {
-        console.error('Search projects error:', error);
-        next(new errorHandler_1.AppError(error instanceof Error ? error.message : 'Failed to search projects', 500));
+        next(new errorHandler_1.CustomError(error instanceof Error ? error.message : 'Error occurred while searching projects', 500));
     }
 });
 exports.searchProjects = searchProjects;
+/**
+ @description update projects engagement(for stars, forks and watchers) using Github api,this function is used by the admin(s) to update the engagement data
+ *could be once a day for example
+ */
 const updateProjectsEngagement = (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
     var _a, _b, _c;
     try {
         const { rows: projects } = yield database_1.default.query('SELECT * FROM projects');
         for (const project of projects) {
             const { title, link } = project;
+            // extracting repo name and repo owner
             const repoOwner = (_a = link.split('github.com/')[1]) === null || _a === void 0 ? void 0 : _a.split('/')[0];
             const repoName = (_c = (_b = link.split('github.com/')[1]) === null || _b === void 0 ? void 0 : _b.split('/')[1]) === null || _c === void 0 ? void 0 : _c.replace('.git', '');
             if (repoOwner && repoName) {
@@ -192,7 +214,7 @@ const updateProjectsEngagement = (req, res, next) => __awaiter(void 0, void 0, v
     }
     catch (error) {
         console.error('Error updating projects engagement:', error);
-        next(new errorHandler_1.AppError(error instanceof Error ? error.message : 'Failed to update project engagement', 500));
+        next(new errorHandler_1.CustomError(error instanceof Error ? error.message : 'Failed to update project engagement', 500));
     }
 });
 exports.updateProjectsEngagement = updateProjectsEngagement;
