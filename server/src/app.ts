@@ -29,12 +29,14 @@ app.use(rateLimit({
 
 app.use(express.json({ limit: '10kb' }));
 
+const allowedOrigins = process.env.CORS_ORIGINS?.split(',') || [];
 app.use(cors({
-  origin: ['http://localhost:5173', 'http://127.0.0.1:5173'],
+  origin: allowedOrigins,
   methods: ['GET', 'POST', 'OPTIONS', 'PUT', 'DELETE'],
   allowedHeaders: ['Content-Type', 'Authorization'],
   credentials: true 
 }));
+
 
 app.use(express.json());
 
