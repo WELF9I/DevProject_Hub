@@ -13,10 +13,10 @@ import ErrorState from '../components/ErrorState'
 export default function Home() {
   const { user } = useUser()
   const [bookmarkedProjects, setBookmarkedProjects] = useState([])
-  //use useAISearch custom hook for ai search service
-  const { searchResults, clearSearch, search } = useAISearch()
+  // use useAISearch custom hook for AI search service
+  const { searchResult, clearSearch, search, error: searchError, isLoading: searchLoading } = useAISearch()
 
-  //Fetchig top projects
+  // fetching top projects
   const { 
     data: projects, 
     isLoading: projectsLoading, 
@@ -26,9 +26,9 @@ export default function Home() {
     queryFn: getTopProjects,
     keepPreviousData: true
   })
+
   /**
-   * 
-   @description the user should be signed in to display the bookmark button and could bookmark or unbookmark a project
+   * @description the user should be signed in to display the bookmark button and could bookmark or unbookmark a project
    */
   const toggleBookmark = async (projectId) => {
     if (!user) {
@@ -50,12 +50,11 @@ export default function Home() {
     }
   }
 
-  if (projectsLoading) return <Spinner />
+  if (projectsLoading || searchLoading) return <Spinner />
   if (projectsError) return <ErrorState />
 
-
-//projects fetched by the ai search
-  const displayedProjects = searchResults.length > 0 ? searchResults : projects
+  // determine which projects to display
+  const displayedProjects = searchResult ? [searchResult] : projects
 
   return (
     <div className="container mt-10">
@@ -76,14 +75,13 @@ export default function Home() {
 
       {/* List of the top projects by engagement or result of AI search */}
       <h2 className="text-2xl font-semibold mb-4 sm:text-xl mt-10">
-        {searchResults.length > 0 
-          ? `AI Search Results (${searchResults.length} projects found)` 
+        {searchResult 
+          ? 'AI Search Result' 
           : 'Top Projects'}
       </h2>
-      
-      {searchResults.length > 0 && (
+      {searchResult && (
         <div className="mb-4 text-sm text-muted-foreground">
-          Showing results for your AI search. 
+          Showing result for your AI search. 
           <button 
             onClick={clearSearch} 
             className="ml-2 text-primary underline"
@@ -92,7 +90,11 @@ export default function Home() {
           </button>
         </div>
       )}
-
+      {searchError && (
+        <div className="mb-4 text-sm text-red-500">
+          {searchError}
+        </div>
+      )}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {displayedProjects?.map(project => (
           <ProjectCard
