@@ -70,7 +70,11 @@ DevProject_Hub/
 - **Server Port**: By default, the server runs on [http://localhost:3000](http://localhost:3000).  
 - **Client Port**: The client (frontend) runs on [http://localhost:5173](http://localhost:5173) when running in development mode.  
 
----
+# ScreenShots
+![image](https://github.com/user-attachments/assets/d221e694-0131-464b-b533-6cc3859c2926)
+![image](https://github.com/user-attachments/assets/91942f42-d907-4415-a461-ae0ddf0f7d53)
+![image](https://github.com/user-attachments/assets/501f9e9b-5a95-4197-8be1-d226acd6ab07)
+
 
 This structure, usage guide, and development script overview provide clear instructions for users and developers alike. Let me know if you'd like any further adjustments! 😊
 
