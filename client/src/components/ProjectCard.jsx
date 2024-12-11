@@ -161,14 +161,14 @@ const ProjectCard = ({
           <SignedIn>
             <div className="flex items-center space-x-2">
               {isHistoryPage && (
-                <Button 
-                  onClick={() => setShowDeleteHistoryDialog(true)}
-                  variant="ghost" 
-                  size="icon" 
-                  className="text-red-500 hover:bg-red-50"
+                 <Button 
+                onClick={() => setShowDeleteHistoryDialog(true)}
+                variant="ghost" 
+                size="icon" 
+                className="text-red-500 hover:bg-transparent hover:text-red-600 transition-colors"
                 >
-                  <Trash2 className="h-4 w-4" />
-                </Button>
+                <Trash2 className="h-4 w-4" />
+              </Button>
               )}
               <Button 
                 onClick={handleBookmarkToggle}
